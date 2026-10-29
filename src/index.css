@@ -108,6 +108,386 @@ nav{display:flex;flex-direction:column;gap:5px}.nav-item{border:0;background:tra
   }
 }
 
+/* Leave requests */
+.attendance-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.day.leave {
+  border-color: #8d68d8;
+  background: color-mix(in srgb, #8d68d8 11%, var(--surface));
+}
+
+.day.leave small,
+.status-badge.leave {
+  color: #7040bd;
+}
+
+.status-badge.leave {
+  background: #f0e9ff;
+}
+
+.leave-day-state {
+  padding: 30px 8px;
+  text-align: center;
+}
+
+.leave-day-state h3 {
+  margin: 14px 0 6px;
+}
+
+.leave-day-state p,
+.manager-leave-indicator p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.manager-leave-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  margin: 14px 0;
+  border: 1px solid color-mix(in srgb, #8d68d8 30%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, #8d68d8 7%, var(--surface));
+}
+
+.leave-history {
+  margin-top: 28px;
+}
+
+.leave-history-list {
+  padding-block: 8px;
+}
+
+.leave-history-row {
+  display: grid;
+  grid-template-columns: .8fr 1.5fr 1fr 1.4fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.leave-history-row:last-child {
+  border-bottom: 0;
+}
+
+.leave-history-row small,
+.leave-history-row b {
+  display: block;
+}
+
+.leave-history-row small {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.leave-history-row b {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.leave-history-row > div p,
+.leave-review-note {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.leave-review-note {
+  grid-column: 1 / -1;
+}
+
+.leave-status.pending {
+  background: #fff1df;
+  color: #a85b00;
+}
+
+.leave-status.approved {
+  background: #e4f7ee;
+  color: #16815a;
+}
+
+.leave-status.rejected,
+.leave-status.cancelled {
+  background: #ffebeb;
+  color: #b42323;
+}
+
+.leave-request-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 720px;
+  max-width: calc(100vw - 32px);
+  max-height: 90vh;
+  max-height: 90dvh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.leave-request-modal > .modal-head {
+  flex: 0 0 auto;
+  align-items: center;
+  margin: 0;
+  padding: 22px 24px 18px;
+  background: var(--surface);
+}
+
+.leave-request-modal > form {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.leave-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 2px 24px 10px;
+}
+
+.leave-calendar {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+.leave-calendar .calendar-navigation {
+  margin-bottom: 14px;
+}
+
+.leave-calendar .calendar-navigation h3 {
+  animation: calendar-label-enter var(--motion-standard) var(--ease-out);
+}
+
+.leave-weekdays,
+.leave-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.leave-weekdays {
+  margin-bottom: 6px;
+}
+
+.leave-weekdays b {
+  padding: 5px 0;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.leave-calendar-day {
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.leave-calendar-day:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.leave-calendar-day.selected {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.leave-calendar-day:disabled {
+  background: color-mix(in srgb, var(--border) 45%, var(--surface));
+  color: var(--muted);
+  opacity: .5;
+  text-decoration: line-through;
+}
+
+.leave-calendar-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.leave-calendar-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.leave-calendar-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.leave-calendar-legend i.unavailable {
+  background: var(--border);
+}
+
+.leave-request-fields {
+  display: grid;
+  gap: 15px;
+  padding-top: 18px;
+}
+
+.leave-selection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.leave-selection-head h3 {
+  font-size: 13px;
+}
+
+.leave-selection-head b {
+  color: var(--primary);
+  font-size: 11px;
+}
+
+.selected-leave-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-height: 38px;
+  align-items: center;
+}
+
+.selected-leave-dates button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.selected-leave-dates button svg {
+  width: 13px;
+}
+
+.selected-leave-dates p,
+.leave-demo-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.leave-request-fields .field > span small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.leave-demo-note {
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--soft);
+  line-height: 1.5;
+}
+
+.leave-modal-actions {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 15px 24px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+@media (max-width: 900px) {
+  .leave-history-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .leave-history-row > .status-badge {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 620px) {
+  .attendance-head-actions {
+    width: 100%;
+  }
+
+  .attendance-head-actions button {
+    flex: 1 1 100%;
+  }
+
+  .leave-history-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .leave-request-modal {
+    width: 100%;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  .leave-request-modal > .modal-head {
+    padding: 18px 18px 14px;
+  }
+
+  .leave-modal-body {
+    padding: 2px 14px 8px;
+  }
+
+  .leave-calendar {
+    padding: 10px;
+  }
+
+  .leave-weekdays,
+  .leave-calendar-days {
+    gap: 3px;
+  }
+
+  .leave-calendar-day {
+    min-height: 38px;
+  }
+
+  .leave-selection-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .leave-modal-actions {
+    padding: 12px 14px 16px;
+  }
+
+  .leave-modal-actions button {
+    flex: 1;
+  }
+}
+
 /* Interaction and motion system */
 :root {
   --motion-fast: 150ms;

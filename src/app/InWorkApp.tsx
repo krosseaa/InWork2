@@ -101,6 +101,28 @@ type AttendanceRecord = {
   notes?: string
   demo?: boolean
 }
+type LeaveStatus = "Pending" | "Approved" | "Rejected" | "Cancelled"
+type LeaveType = "Annual Leave" | "Personal Leave" | "Sick Leave"
+type LeaveRequest = {
+  id: string
+  requesterId: string
+  requesterRole: Role
+  dates: string[]
+  type: LeaveType
+  reason: string
+  notes?: string
+  submittedAt: string
+  status: LeaveStatus
+  reviewerId?: string
+  reviewedAt?: string
+  reviewNotes?: string
+}
+type LeaveRequestDraft = {
+  dates: string[]
+  type: LeaveType
+  reason: string
+  notes: string
+}
 type PerformanceReview = {
   id: number
   employeeId: string
@@ -347,6 +369,64 @@ function normalizeAttendanceRecords(
   return { records, invalidCount }
 }
 
+function normalizeLeaveRequests(value: unknown): LeaveRequest[] {
+  if (!Array.isArray(value)) return []
+  const leaveTypes: LeaveType[] = [
+    "Annual Leave",
+    "Personal Leave",
+    "Sick Leave",
+  ]
+  const leaveStatuses: LeaveStatus[] = [
+    "Pending",
+    "Approved",
+    "Rejected",
+    "Cancelled",
+  ]
+  return value.flatMap((entry): LeaveRequest[] => {
+    if (!entry || typeof entry !== "object") return []
+    const candidate = entry as Partial<LeaveRequest>
+    const dates = Array.isArray(candidate.dates)
+      ? [
+          ...new Set(
+            candidate.dates.filter(
+              (date): date is string =>
+                typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date),
+            ),
+          ),
+        ].sort()
+      : []
+    if (
+      !optionalString(candidate.id) ||
+      !optionalString(candidate.requesterId) ||
+      (candidate.requesterRole !== "admin" &&
+        candidate.requesterRole !== "employee") ||
+      !leaveTypes.includes(candidate.type as LeaveType) ||
+      !leaveStatuses.includes(candidate.status as LeaveStatus) ||
+      !optionalString(candidate.reason) ||
+      !optionalString(candidate.submittedAt) ||
+      dates.length < 1 ||
+      dates.length > 3
+    )
+      return []
+    return [
+      {
+        id: candidate.id as string,
+        requesterId: candidate.requesterId as string,
+        requesterRole: candidate.requesterRole,
+        dates,
+        type: candidate.type as LeaveType,
+        reason: candidate.reason as string,
+        notes: optionalString(candidate.notes),
+        submittedAt: candidate.submittedAt as string,
+        status: candidate.status as LeaveStatus,
+        reviewerId: optionalString(candidate.reviewerId),
+        reviewedAt: optionalString(candidate.reviewedAt),
+        reviewNotes: optionalString(candidate.reviewNotes),
+      },
+    ]
+  })
+}
+
 function demoAttendance(): AttendanceRecord[] {
   const today = new Date()
   const records: AttendanceRecord[] = []
@@ -516,6 +596,9 @@ export function InWorkApp() {
   const [reviews, setReviews] = useState<PerformanceReview[]>(() =>
     getStored("inwork-reviews", []),
   )
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(() =>
+    normalizeLeaveRequests(getStored("inwork-leave-requests", [])),
+  )
   const [cameraAction, setCameraAction] =
     useState<null | "checkIn" | "checkOut">(null)
 
@@ -538,6 +621,9 @@ export function InWorkApp() {
   useEffect(() => {
     localStorage.setItem("inwork-reviews", JSON.stringify(reviews))
   }, [reviews])
+  useEffect(() => {
+    localStorage.setItem("inwork-leave-requests", JSON.stringify(leaveRequests))
+  }, [leaveRequests])
 
   const notify = (message: string) => {
     setToast(message)
@@ -735,6 +821,9 @@ export function InWorkApp() {
                 employees={employees}
                 checkedIn={checkedIn}
                 attendance={attendance}
+                leaveRequests={leaveRequests}
+                setLeaveRequests={setLeaveRequests}
+                notify={notify}
                 action={() =>
                   setCameraAction(checkedIn ? "checkOut" : "checkIn")
                 }
@@ -1436,6 +1525,9 @@ function Attendance({
   employees,
   checkedIn,
   attendance,
+  leaveRequests,
+  setLeaveRequests,
+  notify,
   action,
   lang,
 }: any) {
@@ -1443,6 +1535,7 @@ function Attendance({
   const today = useMemo(() => new Date(), [])
   const [monthOffset, setMonthOffset] = useState(0)
   const [selectedDate, setSelectedDate] = useState(() => localDateKey(today))
+  const [leaveOpen, setLeaveOpen] = useState(false)
   const viewedMonth = new Date(
     today.getFullYear(),
     today.getMonth() + monthOffset,
@@ -1457,6 +1550,25 @@ function Attendance({
     () => normalizeAttendanceRecords(attendance),
     [attendance],
   )
+  const ownLeaveRequests = (leaveRequests as LeaveRequest[])
+    .filter((request) => request.requesterId === user.employeeId)
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+  const approvedLeaveDates = new Set(
+    ownLeaveRequests
+      .filter((request) => request.status === "Approved")
+      .flatMap((request) => request.dates),
+  )
+  const unavailableLeaveDates = new Set([
+    ...ownLeaveRequests
+      .filter(
+        (request) =>
+          request.status === "Pending" || request.status === "Approved",
+      )
+      .flatMap((request) => request.dates),
+    ...normalized.records
+      .filter((record) => record.employeeId === user.employeeId)
+      .map((record) => record.date),
+  ])
   const visibleRecords = normalized.records.filter(
     (record: AttendanceRecord) =>
       record.date.startsWith(monthKey) &&
@@ -1499,6 +1611,41 @@ function Attendance({
     month: "long",
     year: "numeric",
   }).format(new Date(`${selectedDate}T12:00:00`))
+  const leaveTypeLabel = (type: LeaveType) => {
+    if (type === "Annual Leave") return t("leave.annual")
+    if (type === "Personal Leave") return t("leave.personal")
+    return t("leave.sick")
+  }
+  const submitLeaveRequest = (draft: LeaveRequestDraft) => {
+    const uniqueDates = [...new Set(draft.dates)].sort()
+    const todayKey = localDateKey(new Date())
+    if (
+      uniqueDates.length < 1 ||
+      uniqueDates.length > 3 ||
+      uniqueDates.some(
+        (date) => date < todayKey || unavailableLeaveDates.has(date),
+      ) ||
+      !draft.type ||
+      !draft.reason.trim()
+    ) {
+      notify(t("leave.invalidRequest"))
+      return false
+    }
+    const request: LeaveRequest = {
+      id: `LR-${Date.now()}-${user.employeeId}`,
+      requesterId: user.employeeId,
+      requesterRole: user.role,
+      dates: uniqueDates,
+      type: draft.type,
+      reason: draft.reason.trim(),
+      notes: draft.notes.trim() || undefined,
+      submittedAt: new Date().toISOString(),
+      status: "Pending",
+    }
+    setLeaveRequests([...leaveRequests as LeaveRequest[], request])
+    notify(t("leave.submitted"))
+    return true
+  }
   return (
     <>
       <PageHead
@@ -1508,15 +1655,24 @@ function Attendance({
         }
         description={t("attendance.description")}
         action={
-          <button
-            className={
-              checkedIn ? "secondary-button fit" : "primary-button fit"
-            }
-            onClick={action}
-          >
-            <Clock3 />
-            {checkedIn ? t("attendance.cameraOut") : t("attendance.cameraIn")}
-          </button>
+          <div className="attendance-head-actions">
+            <button
+              className="secondary-button fit"
+              onClick={() => setLeaveOpen(true)}
+            >
+              <CalendarDays />
+              {t("leave.request")}
+            </button>
+            <button
+              className={
+                checkedIn ? "secondary-button fit" : "primary-button fit"
+              }
+              onClick={action}
+            >
+              <Clock3 />
+              {checkedIn ? t("attendance.cameraOut") : t("attendance.cameraIn")}
+            </button>
+          </div>
         }
       />
       {normalized.invalidCount > 0 && (
@@ -1573,16 +1729,22 @@ function Attendance({
               )
               const isToday = key === localDateKey(today)
               const selected = key === selectedDate
+              const isApprovedLeave = approvedLeaveDates.has(key)
               const rawStatus =
                 user.role === "employee"
-                  ? records[0]?.status
-                  : records.some(
-                        (record: AttendanceRecord) => record.status === "Late",
-                      )
-                    ? "Late"
-                    : records.length
-                      ? "Recorded"
-                      : ""
+                  ? records[0]?.status || (isApprovedLeave ? "Leave" : "")
+                  : isApprovedLeave
+                    ? "Leave"
+                    : records.some(
+                          (record: AttendanceRecord) =>
+                            record.status === "Late",
+                        )
+                      ? "Late"
+                      : records.length
+                        ? "Recorded"
+                        : isApprovedLeave
+                          ? "Leave"
+                          : ""
               const status =
                 typeof rawStatus === "string" ? rawStatus.trim() : ""
               const statusClass = status
@@ -1597,10 +1759,12 @@ function Attendance({
                   key={day}
                 >
                   <span>{day}</span>
-                  {records.length > 0 && (
+                  {(records.length > 0 || status) && (
                     <small>
                       {user.role === "admin"
-                        ? t("attendance.records", { count: records.length })
+                        ? status === "Leave"
+                          ? translateStatus(status)
+                          : t("attendance.records", { count: records.length })
                         : status
                           ? translateStatus(status)
                           : t("attendance.statusUnavailable")}
@@ -1662,6 +1826,12 @@ function Attendance({
                   />
                 )}
               </>
+            ) : approvedLeaveDates.has(selectedDate) ? (
+              <div className="leave-day-state">
+                <span className="status-badge leave">{t("status.leave")}</span>
+                <h3>{t("leave.approvedDay")}</h3>
+                <p>{t("leave.approvedDayDetail")}</p>
+              </div>
             ) : (
               <div className="empty-state">
                 <CalendarDays />
@@ -1675,11 +1845,343 @@ function Attendance({
               employees={employees}
               employeeName={employeeName}
               employeeDepartment={employeeDepartment}
+              ownApprovedLeave={approvedLeaveDates.has(selectedDate)}
             />
           )}
         </article>
       </div>
+      <section className="leave-history" aria-labelledby="leave-history-title">
+        <div className="section-title">
+          <h2 id="leave-history-title">{t("leave.history")}</h2>
+          <p>{t("leave.historyDescription")}</p>
+        </div>
+        <div className="panel leave-history-list">
+          {ownLeaveRequests.length ? (
+            ownLeaveRequests.map((request) => (
+              <article className="leave-history-row" key={request.id}>
+                <div>
+                  <small>{t("leave.submittedOn")}</small>
+                  <b>
+                    {new Intl.DateTimeFormat(locale, {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    }).format(new Date(request.submittedAt))}
+                  </b>
+                </div>
+                <div>
+                  <small>{t("leave.selectedDates")}</small>
+                  <b>
+                    {request.dates
+                      .map((date) =>
+                        new Intl.DateTimeFormat(locale, {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        }).format(new Date(`${date}T12:00:00`)),
+                      )
+                      .join(" · ")}
+                  </b>
+                </div>
+                <div>
+                  <small>{t("leave.type")}</small>
+                  <b>{leaveTypeLabel(request.type)}</b>
+                </div>
+                <div>
+                  <small>{t("leave.reason")}</small>
+                  <b>{request.reason}</b>
+                  {request.notes && <p>{request.notes}</p>}
+                </div>
+                <span
+                  className={`status-badge leave-status ${request.status.toLowerCase()}`}
+                >
+                  {translateStatus(request.status)}
+                </span>
+                {request.reviewNotes && (
+                  <p className="leave-review-note">
+                    {t("leave.reviewNotes")}: {request.reviewNotes}
+                  </p>
+                )}
+              </article>
+            ))
+          ) : (
+            <div className="empty-state">
+              <CalendarDays />
+              <h3>{t("leave.noRequests")}</h3>
+              <p>{t("leave.noRequestsDetail")}</p>
+            </div>
+          )}
+        </div>
+      </section>
+      {leaveOpen && (
+        <LeaveRequestModal
+          blockedDates={unavailableLeaveDates}
+          close={() => setLeaveOpen(false)}
+          notify={notify}
+          save={submitLeaveRequest}
+        />
+      )}
     </>
+  )
+}
+
+function LeaveRequestModal({
+  blockedDates,
+  close,
+  notify,
+  save,
+}: {
+  blockedDates: Set<string>
+  close: () => void
+  notify: (message: string) => void
+  save: (draft: LeaveRequestDraft) => boolean
+}) {
+  const { locale, t } = useI18n()
+  const dismiss = useAnimatedModalClose(close)
+  const today = useMemo(() => new Date(), [])
+  const todayKey = localDateKey(today)
+  const [viewedMonth, setViewedMonth] = useState(
+    () => new Date(today.getFullYear(), today.getMonth(), 1),
+  )
+  const [selectedDates, setSelectedDates] = useState<string[]>([])
+  const [error, setError] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const year = viewedMonth.getFullYear()
+  const month = viewedMonth.getMonth()
+  const dayCount = new Date(year, month + 1, 0).getDate()
+  const leadingDays = (new Date(year, month, 1).getDay() + 6) % 7
+  const isCurrentMonth =
+    year === today.getFullYear() && month === today.getMonth()
+  const monthLabel = new Intl.DateTimeFormat(locale, {
+    month: "long",
+    year: "numeric",
+  }).format(viewedMonth)
+  const weekdays = Array.from({ length: 7 }, (_, index) =>
+    new Intl.DateTimeFormat(locale, { weekday: "short" }).format(
+      new Date(2024, 0, index + 1),
+    ),
+  )
+  const formatDate = (date: string) =>
+    new Intl.DateTimeFormat(locale, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(new Date(`${date}T12:00:00`))
+  const toggleDate = (date: string) => {
+    if (date < todayKey || blockedDates.has(date)) return
+    if (selectedDates.includes(date)) {
+      setSelectedDates(selectedDates.filter((item) => item !== date))
+      setError("")
+      return
+    }
+    if (selectedDates.length >= 3) {
+      setError(t("leave.maximum"))
+      notify(t("leave.maximum"))
+      return
+    }
+    setSelectedDates([...selectedDates, date].sort())
+    setError("")
+  }
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (submitting) return
+    const data = new FormData(event.currentTarget)
+    const type = String(data.get("type")) as LeaveType
+    const reason = String(data.get("reason") || "").trim()
+    const notes = String(data.get("notes") || "").trim()
+    if (!selectedDates.length) {
+      setError(t("leave.selectAtLeastOne"))
+      return
+    }
+    if (selectedDates.length > 3) {
+      setError(t("leave.maximum"))
+      return
+    }
+    if (!type) {
+      setError(t("leave.typeRequired"))
+      return
+    }
+    if (!reason) {
+      setError(t("leave.reasonRequired"))
+      return
+    }
+    setSubmitting(true)
+    if (save({ dates: selectedDates, type, reason, notes })) {
+      dismiss()
+      return
+    }
+    setSubmitting(false)
+  }
+  return createPortal(
+    <div className="modal-wrap" role="dialog" aria-modal="true">
+      <div className="modal leave-request-modal">
+        <div className="modal-head">
+          <div>
+            <span className="eyebrow">{t("leave.eyebrow")}</span>
+            <h2>{t("leave.request")}</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={dismiss}
+            aria-label={t("leave.close")}
+          >
+            <X />
+          </button>
+        </div>
+        <form onSubmit={submit}>
+          <div className="leave-modal-body">
+            <section
+              className="leave-calendar"
+              aria-label={t("leave.calendar")}
+            >
+              <div className="calendar-navigation">
+                <button
+                  type="button"
+                  className="icon-button"
+                  disabled={isCurrentMonth}
+                  onClick={() => setViewedMonth(new Date(year, month - 1, 1))}
+                  aria-label={t("attendance.previousMonth")}
+                >
+                  ‹
+                </button>
+                <h3 key={monthLabel}>{monthLabel}</h3>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => setViewedMonth(new Date(year, month + 1, 1))}
+                  aria-label={t("attendance.nextMonth")}
+                >
+                  ›
+                </button>
+              </div>
+              <div className="leave-weekdays">
+                {weekdays.map((weekday) => (
+                  <b key={weekday}>{weekday}</b>
+                ))}
+              </div>
+              <div className="leave-calendar-days">
+                {Array.from({ length: leadingDays }).map((_, index) => (
+                  <span key={`blank-${index}`} />
+                ))}
+                {Array.from({ length: dayCount }, (_, index) => index + 1).map(
+                  (day) => {
+                    const date = localDateKey(new Date(year, month, day))
+                    const selected = selectedDates.includes(date)
+                    const disabled = date < todayKey || blockedDates.has(date)
+                    return (
+                      <button
+                        type="button"
+                        className={`leave-calendar-day${
+                          selected ? " selected" : ""
+                        }`}
+                        key={date}
+                        disabled={disabled}
+                        aria-pressed={selected}
+                        aria-label={formatDate(date)}
+                        onClick={() => toggleDate(date)}
+                      >
+                        {day}
+                      </button>
+                    )
+                  },
+                )}
+              </div>
+              <div className="leave-calendar-legend">
+                <span>
+                  <i className="available" /> {t("leave.eligible")}
+                </span>
+                <span>
+                  <i className="unavailable" /> {t("leave.unavailable")}
+                </span>
+              </div>
+            </section>
+            <section className="leave-request-fields">
+              <div className="leave-selection-head">
+                <h3>{t("leave.selectedDates")}</h3>
+                <b aria-live="polite">
+                  {t("leave.selectedCount", {
+                    count: selectedDates.length,
+                    maximum: 3,
+                  })}
+                </b>
+              </div>
+              <div className="selected-leave-dates">
+                {selectedDates.length ? (
+                  selectedDates.map((date) => (
+                    <button
+                      type="button"
+                      key={date}
+                      onClick={() => toggleDate(date)}
+                      aria-label={`${t("leave.removeDate")} ${formatDate(date)}`}
+                    >
+                      {formatDate(date)}
+                      <X />
+                    </button>
+                  ))
+                ) : (
+                  <p>{t("leave.noneSelected")}</p>
+                )}
+              </div>
+              {error && (
+                <div className="form-error" role="alert">
+                  {error}
+                </div>
+              )}
+              <label className="field">
+                <span>{t("leave.type")}</span>
+                <select name="type" defaultValue="" required>
+                  <option value="" disabled>
+                    {t("leave.chooseType")}
+                  </option>
+                  <option value="Annual Leave">{t("leave.annual")}</option>
+                  <option value="Personal Leave">{t("leave.personal")}</option>
+                  <option value="Sick Leave">{t("leave.sick")}</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>{t("leave.reason")}</span>
+                <textarea
+                  name="reason"
+                  placeholder={t("leave.reasonPlaceholder")}
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>
+                  {t("leave.notes")} <small>{t("leave.optional")}</small>
+                </span>
+                <textarea
+                  name="notes"
+                  placeholder={t("leave.notesPlaceholder")}
+                />
+              </label>
+              <p className="leave-demo-note">{t("leave.pendingNotice")}</p>
+            </section>
+          </div>
+          <div className="modal-actions leave-modal-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={dismiss}
+              disabled={submitting}
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={submitting}
+              aria-busy={submitting}
+            >
+              {t("leave.submit")}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -1688,11 +2190,18 @@ function ManagerDailySummary({
   employees,
   employeeName,
   employeeDepartment,
+  ownApprovedLeave,
 }: any) {
   const { status, t } = useI18n()
   const expected = employees.length + 1
   return (
     <>
+      {ownApprovedLeave && (
+        <div className="manager-leave-indicator">
+          <span className="status-badge leave">{t("status.leave")}</span>
+          <p>{t("leave.managerApprovedDay")}</p>
+        </div>
+      )}
       {records.length ? (
         <>
           <div className="daily-metrics">
@@ -1776,7 +2285,7 @@ function ManagerDailySummary({
             </table>
           </div>
         </>
-      ) : (
+      ) : ownApprovedLeave ? null : (
         <div className="empty-state">
           <CalendarDays />
           <h3>{t("attendance.noRecorded")}</h3>
