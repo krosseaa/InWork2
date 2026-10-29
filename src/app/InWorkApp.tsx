@@ -113,9 +113,12 @@ type LeaveRequest = {
   notes?: string
   submittedAt: string
   status: LeaveStatus
+  designatedApproverId?: string
   reviewerId?: string
   reviewedAt?: string
   reviewNotes?: string
+  requesterNotificationReadAt?: string
+  approverNotificationReadAt?: string
 }
 type LeaveRequestDraft = {
   dates: string[]
@@ -254,6 +257,23 @@ const demoAccounts: Record<string, User> = {
     position: "Frontend Engineer",
     department: "Engineering",
   },
+  "approver@inwork.demo": {
+    name: "Jordan Kim",
+    email: "approver@inwork.demo",
+    role: "admin",
+    employeeId: "APR-001",
+    position: "Designated Leave Approver",
+    department: "Executive Office",
+  },
+}
+const DESIGNATED_LEAVE_APPROVER_ID = "APR-001"
+const BACKUP_LEAVE_APPROVER_ID = "MGR-001"
+
+function canReviewManagerLeave(reviewerId: string, requesterId: string) {
+  if (reviewerId === requesterId) return false
+  return requesterId === DESIGNATED_LEAVE_APPROVER_ID
+    ? reviewerId === BACKUP_LEAVE_APPROVER_ID
+    : reviewerId === DESIGNATED_LEAVE_APPROVER_ID
 }
 const seedItems: Item[] = [
   {
@@ -419,9 +439,16 @@ function normalizeLeaveRequests(value: unknown): LeaveRequest[] {
         notes: optionalString(candidate.notes),
         submittedAt: candidate.submittedAt as string,
         status: candidate.status as LeaveStatus,
+        designatedApproverId: optionalString(candidate.designatedApproverId),
         reviewerId: optionalString(candidate.reviewerId),
         reviewedAt: optionalString(candidate.reviewedAt),
         reviewNotes: optionalString(candidate.reviewNotes),
+        requesterNotificationReadAt: optionalString(
+          candidate.requesterNotificationReadAt,
+        ),
+        approverNotificationReadAt: optionalString(
+          candidate.approverNotificationReadAt,
+        ),
       },
     ]
   })
@@ -852,7 +879,9 @@ export function InWorkApp() {
                 notify={notify}
               />
             )}
-            {view === "notifications" && <Notifications />}
+            {view === "notifications" && (
+              <Notifications user={user} leaveRequests={leaveRequests} />
+            )}
             {view === "profile" && (
               <Profile
                 user={user}
@@ -1140,6 +1169,8 @@ function Auth({
             {t("auth.demoPassword")} <b>inworkdemo</b>
             <br />
             {t("auth.manager")} manager@inwork.demo
+            <br />
+            {t("auth.approver")} approver@inwork.demo
             <br />
             {t("auth.employees")} employee1@inwork.demo · employee2@inwork.demo
           </p>
@@ -1558,6 +1589,16 @@ function Attendance({
       .filter((request) => request.status === "Approved")
       .flatMap((request) => request.dates),
   )
+  const visibleApprovedRequests = (leaveRequests as LeaveRequest[]).filter(
+    (request) =>
+      request.status === "Approved" &&
+      (request.requesterId === user.employeeId ||
+        (user.role === "admin" && request.requesterRole === "employee") ||
+        canReviewManagerLeave(user.employeeId, request.requesterId)),
+  )
+  const visibleApprovedLeaveDates = new Set(
+    visibleApprovedRequests.flatMap((request) => request.dates),
+  )
   const unavailableLeaveDates = new Set([
     ...ownLeaveRequests
       .filter(
@@ -1569,6 +1610,54 @@ function Attendance({
       .filter((record) => record.employeeId === user.employeeId)
       .map((record) => record.date),
   ])
+  useEffect(() => {
+    const ownUnseenDecisions = (leaveRequests as LeaveRequest[]).filter(
+      (request) =>
+        request.requesterId === user.employeeId &&
+        request.status !== "Pending" &&
+        !request.requesterNotificationReadAt,
+    )
+    const unseenManagerApprovals = (leaveRequests as LeaveRequest[]).filter(
+      (request) =>
+        request.requesterRole === "admin" &&
+        canReviewManagerLeave(user.employeeId, request.requesterId) &&
+        request.status === "Pending" &&
+        !request.approverNotificationReadAt,
+    )
+    if (!ownUnseenDecisions.length && !unseenManagerApprovals.length) return
+    const readAt = new Date().toISOString()
+    setLeaveRequests(
+      (leaveRequests as LeaveRequest[]).map((request) => ({
+        ...request,
+        requesterNotificationReadAt: ownUnseenDecisions.some(
+          (item) => item.id === request.id,
+        )
+          ? readAt
+          : request.requesterNotificationReadAt,
+        approverNotificationReadAt: unseenManagerApprovals.some(
+          (item) => item.id === request.id,
+        )
+          ? readAt
+          : request.approverNotificationReadAt,
+      })),
+    )
+    if (ownUnseenDecisions.length) {
+      const latest = ownUnseenDecisions[0]
+      notify(
+        t("leave.decisionNotification", {
+          status: translateStatus(latest.status),
+        }),
+      )
+    } else {
+      notify(
+        t("leave.managerApprovalNotification", {
+          count: unseenManagerApprovals.length,
+        }),
+      )
+    }
+    // Notifications are consumed when this authenticated user opens Attendance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.employeeId])
   const visibleRecords = normalized.records.filter(
     (record: AttendanceRecord) =>
       record.date.startsWith(monthKey) &&
@@ -1641,9 +1730,59 @@ function Attendance({
       notes: draft.notes.trim() || undefined,
       submittedAt: new Date().toISOString(),
       status: "Pending",
+      designatedApproverId:
+        user.role === "admin"
+          ? user.employeeId === DESIGNATED_LEAVE_APPROVER_ID
+            ? BACKUP_LEAVE_APPROVER_ID
+            : DESIGNATED_LEAVE_APPROVER_ID
+          : undefined,
     }
     setLeaveRequests([...leaveRequests as LeaveRequest[], request])
     notify(t("leave.submitted"))
+    return true
+  }
+  const reviewLeaveRequest = (
+    requestId: string,
+    decision: "Approved" | "Rejected",
+    reviewNotes: string,
+  ) => {
+    const request = (leaveRequests as LeaveRequest[]).find(
+      (item) => item.id === requestId,
+    )
+    const canReviewEmployee =
+      request?.requesterRole === "employee" && user.role === "admin"
+    const canReviewManager =
+      request?.requesterRole === "admin" &&
+      canReviewManagerLeave(user.employeeId, request.requesterId)
+    if (
+      !request ||
+      request.status !== "Pending" ||
+      request.requesterId === user.employeeId ||
+      (!canReviewEmployee && !canReviewManager)
+    ) {
+      notify(t("leave.reviewUnauthorized"))
+      return false
+    }
+    const reviewedAt = new Date().toISOString()
+    setLeaveRequests(
+      (leaveRequests as LeaveRequest[]).map((item) =>
+        item.id === requestId
+          ? {
+              ...item,
+              status: decision,
+              reviewerId: user.employeeId,
+              reviewedAt,
+              reviewNotes: reviewNotes.trim() || undefined,
+              requesterNotificationReadAt: undefined,
+            }
+          : item,
+      ),
+    )
+    notify(
+      decision === "Approved"
+        ? t("leave.approvedSuccess")
+        : t("leave.rejectedSuccess"),
+    )
     return true
   }
   return (
@@ -1729,7 +1868,7 @@ function Attendance({
               )
               const isToday = key === localDateKey(today)
               const selected = key === selectedDate
-              const isApprovedLeave = approvedLeaveDates.has(key)
+              const isApprovedLeave = visibleApprovedLeaveDates.has(key)
               const rawStatus =
                 user.role === "employee"
                   ? records[0]?.status || (isApprovedLeave ? "Leave" : "")
@@ -1846,10 +1985,21 @@ function Attendance({
               employeeName={employeeName}
               employeeDepartment={employeeDepartment}
               ownApprovedLeave={approvedLeaveDates.has(selectedDate)}
+              approvedLeaveRequests={visibleApprovedRequests.filter((request) =>
+                request.dates.includes(selectedDate),
+              )}
             />
           )}
         </article>
       </div>
+      {user.role === "admin" && (
+        <LeaveRequestManagement
+          currentUser={user}
+          employees={employees}
+          requests={leaveRequests}
+          review={reviewLeaveRequest}
+        />
+      )}
       <section className="leave-history" aria-labelledby="leave-history-title">
         <div className="section-title">
           <h2 id="leave-history-title">{t("leave.history")}</h2>
@@ -1897,6 +2047,23 @@ function Attendance({
                 >
                   {translateStatus(request.status)}
                 </span>
+                {request.requesterRole === "admin" &&
+                  request.status === "Pending" && (
+                    <p className="leave-review-note">
+                      {t("leave.awaitingDesignatedApprover")}
+                    </p>
+                  )}
+                {request.reviewerId && request.status !== "Pending" && (
+                  <p className="leave-review-note">
+                    {request.status === "Approved"
+                      ? t("leave.approvedBy")
+                      : t("leave.rejectedBy")}
+                    :{" "}
+                    {Object.values(demoAccounts).find(
+                      (account) => account.employeeId === request.reviewerId,
+                    )?.name || request.reviewerId}
+                  </p>
+                )}
                 {request.reviewNotes && (
                   <p className="leave-review-note">
                     {t("leave.reviewNotes")}: {request.reviewNotes}
@@ -2185,15 +2352,392 @@ function LeaveRequestModal({
   )
 }
 
+function LeaveRequestManagement({
+  currentUser,
+  employees,
+  requests,
+  review,
+}: {
+  currentUser: User
+  employees: Employee[]
+  requests: LeaveRequest[]
+  review: (
+    requestId: string,
+    decision: "Approved" | "Rejected",
+    reviewNotes: string,
+  ) => boolean
+}) {
+  const { locale, status, t } = useI18n()
+  const [roleFilter, setRoleFilter] = useState<"all" | Role>("all")
+  const [statusFilter, setStatusFilter] = useState<"all" | LeaveStatus>("all")
+  const [monthFilter, setMonthFilter] = useState("")
+  const [decision, setDecision] = useState<{
+    request: LeaveRequest
+    value: "Approved" | "Rejected"
+  } | null>(null)
+  const canReviewManagerRequests = requests.some(
+    (request) =>
+      request.requesterRole === "admin" &&
+      canReviewManagerLeave(currentUser.employeeId, request.requesterId),
+  )
+  const visible = requests
+    .filter(
+      (request) =>
+        request.requesterRole === "employee" ||
+        (request.requesterRole === "admin" &&
+          canReviewManagerLeave(currentUser.employeeId, request.requesterId)),
+    )
+    .filter(
+      (request) => roleFilter === "all" || request.requesterRole === roleFilter,
+    )
+    .filter(
+      (request) => statusFilter === "all" || request.status === statusFilter,
+    )
+    .filter(
+      (request) =>
+        !monthFilter ||
+        request.dates.some((date) => date.startsWith(monthFilter)),
+    )
+  const employeeRequests = visible.filter(
+    (request) => request.requesterRole === "employee",
+  )
+  const managerRequests = visible.filter(
+    (request) => request.requesterRole === "admin",
+  )
+  const requesterDetails = (request: LeaveRequest) => {
+    const employee = employees.find((item) => item.id === request.requesterId)
+    const account = Object.values(demoAccounts).find(
+      (item) => item.employeeId === request.requesterId,
+    )
+    return {
+      name: employee?.name || account?.name || request.requesterId,
+      department: employee?.department || account?.department || "—",
+    }
+  }
+  const reviewerName = (reviewerId?: string) =>
+    Object.values(demoAccounts).find(
+      (account) => account.employeeId === reviewerId,
+    )?.name ||
+    employees.find((employee) => employee.id === reviewerId)?.name ||
+    reviewerId ||
+    "—"
+  const typeLabel = (type: LeaveType) =>
+    type === "Annual Leave"
+      ? t("leave.annual")
+      : type === "Personal Leave"
+        ? t("leave.personal")
+        : t("leave.sick")
+  const formatDate = (date: string) =>
+    new Intl.DateTimeFormat(locale, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(new Date(`${date}T12:00:00`))
+  const renderSection = (
+    title: string,
+    sectionRequests: LeaveRequest[],
+    pending: boolean,
+  ) => (
+    <section className="leave-approval-section">
+      <div className="leave-approval-heading">
+        <h3>{title}</h3>
+        <span>{sectionRequests.length}</span>
+      </div>
+      {sectionRequests.length ? (
+        <div className="leave-approval-grid">
+          {sectionRequests.map((request) => {
+            const requester = requesterDetails(request)
+            return (
+              <article className="leave-approval-card" key={request.id}>
+                <div className="leave-approval-card-head">
+                  <div>
+                    <b>{requester.name}</b>
+                    <small>
+                      {request.requesterId} · {requester.department}
+                    </small>
+                  </div>
+                  <span
+                    className={`status-badge leave-status ${request.status.toLowerCase()}`}
+                  >
+                    {status(request.status)}
+                  </span>
+                </div>
+                <dl>
+                  <div>
+                    <dt>{t("leave.requesterRole")}</dt>
+                    <dd>
+                      {request.requesterRole === "admin"
+                        ? t("role.administrator")
+                        : t("role.employee")}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t("leave.selectedDates")}</dt>
+                    <dd>{request.dates.map(formatDate).join(" · ")}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("leave.type")}</dt>
+                    <dd>{typeLabel(request.type)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("leave.submittedOn")}</dt>
+                    <dd>
+                      {new Intl.DateTimeFormat(locale, {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      }).format(new Date(request.submittedAt))}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="leave-approval-reason">
+                  <small>{t("leave.reason")}</small>
+                  <p>{request.reason}</p>
+                  {request.notes && <p>{request.notes}</p>}
+                </div>
+                {request.reviewedAt && (
+                  <div className="leave-review-decision">
+                    <b>
+                      {request.status === "Approved"
+                        ? t("leave.approvedBy")
+                        : t("leave.rejectedBy")}
+                      : {reviewerName(request.reviewerId)}
+                    </b>
+                    <small>
+                      {t("leave.reviewedOn")}:{" "}
+                      {new Intl.DateTimeFormat(locale, {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      }).format(new Date(request.reviewedAt))}
+                    </small>
+                    {request.reviewNotes && <p>{request.reviewNotes}</p>}
+                  </div>
+                )}
+                {pending && (
+                  <div className="leave-approval-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        setDecision({ request, value: "Rejected" })
+                      }
+                    >
+                      {t("leave.reject")}
+                    </button>
+                    <button
+                      className="primary-button"
+                      onClick={() =>
+                        setDecision({ request, value: "Approved" })
+                      }
+                    >
+                      {t("leave.approve")}
+                    </button>
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="empty-inline">{t("leave.noMatchingRequests")}</div>
+      )}
+    </section>
+  )
+  return (
+    <section
+      className="leave-management"
+      aria-labelledby="leave-management-title"
+    >
+      <div className="section-title">
+        <h2 id="leave-management-title">{t("leave.management")}</h2>
+        <p>{t("leave.managementDescription")}</p>
+      </div>
+      <div className="leave-filters panel">
+        <label className="field">
+          <span>{t("leave.requesterRole")}</span>
+          <select
+            value={roleFilter}
+            onChange={(event) =>
+              setRoleFilter(event.target.value as "all" | Role)
+            }
+          >
+            <option value="all">{t("leave.allRoles")}</option>
+            <option value="employee">{t("role.employee")}</option>
+            {canReviewManagerRequests && (
+              <option value="admin">{t("role.administrator")}</option>
+            )}
+          </select>
+        </label>
+        <label className="field">
+          <span>{t("attendance.status")}</span>
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(event.target.value as "all" | LeaveStatus)
+            }
+          >
+            <option value="all">{t("leave.allStatuses")}</option>
+            <option value="Pending">{t("status.pending")}</option>
+            <option value="Approved">{t("status.approved")}</option>
+            <option value="Rejected">{t("status.rejected")}</option>
+            <option value="Cancelled">{t("status.cancelled")}</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>{t("leave.requestMonth")}</span>
+          <input
+            type="month"
+            value={monthFilter}
+            onChange={(event) => setMonthFilter(event.target.value)}
+          />
+        </label>
+      </div>
+      {renderSection(
+        t("leave.pendingEmployee"),
+        employeeRequests.filter((request) => request.status === "Pending"),
+        true,
+      )}
+      {renderSection(
+        t("leave.reviewedEmployee"),
+        employeeRequests.filter((request) => request.status !== "Pending"),
+        false,
+      )}
+      {canReviewManagerRequests &&
+        renderSection(
+          t("leave.pendingManager"),
+          managerRequests.filter((request) => request.status === "Pending"),
+          true,
+        )}
+      {canReviewManagerRequests &&
+        renderSection(
+          t("leave.reviewedManager"),
+          managerRequests.filter((request) => request.status !== "Pending"),
+          false,
+        )}
+      {decision && (
+        <LeaveDecisionModal
+          request={decision.request}
+          decision={decision.value}
+          close={() => setDecision(null)}
+          confirm={(notes) => {
+            return review(decision.request.id, decision.value, notes)
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+function LeaveDecisionModal({
+  request,
+  decision,
+  close,
+  confirm,
+}: {
+  request: LeaveRequest
+  decision: "Approved" | "Rejected"
+  close: () => void
+  confirm: (notes: string) => boolean
+}) {
+  const { t } = useI18n()
+  const dismiss = useAnimatedModalClose(close)
+  const [submitting, setSubmitting] = useState(false)
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
+    const notes = String(new FormData(event.currentTarget).get("notes") || "")
+    if (confirm(notes)) {
+      closeModalWithAnimation(close)
+      return
+    }
+    setSubmitting(false)
+  }
+  return createPortal(
+    <div className="modal-wrap" role="alertdialog" aria-modal="true">
+      <div className="modal leave-decision-modal">
+        <div className="modal-head">
+          <div>
+            <span className="eyebrow">{t("leave.reviewEyebrow")}</span>
+            <h2>
+              {decision === "Approved"
+                ? t("leave.approveRequest")
+                : t("leave.rejectRequest")}
+            </h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={dismiss}
+            aria-label={t("leave.closeReview")}
+          >
+            <X />
+          </button>
+        </div>
+        <p className="leave-decision-copy">
+          {t("leave.decisionConfirmation", {
+            decision:
+              decision === "Approved"
+                ? t("leave.approve").toLowerCase()
+                : t("leave.reject").toLowerCase(),
+            id: request.requesterId,
+          })}
+        </p>
+        <form onSubmit={submit}>
+          <label className="field">
+            <span>
+              {t("leave.reviewNotes")} <small>{t("leave.optional")}</small>
+            </span>
+            <textarea
+              name="notes"
+              placeholder={t("leave.reviewNotesPlaceholder")}
+            />
+          </label>
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={dismiss}
+              disabled={submitting}
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              type="submit"
+              className={
+                decision === "Approved" ? "primary-button" : "delete-confirm"
+              }
+              disabled={submitting}
+              aria-busy={submitting}
+            >
+              {decision === "Approved"
+                ? t("leave.confirmApprove")
+                : t("leave.confirmReject")}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function ManagerDailySummary({
   records,
   employees,
   employeeName,
   employeeDepartment,
   ownApprovedLeave,
+  approvedLeaveRequests,
 }: any) {
   const { status, t } = useI18n()
   const expected = employees.length + 1
+  const leaveOnlyRequests = (approvedLeaveRequests as LeaveRequest[]).filter(
+    (request) =>
+      !records.some(
+        (record: AttendanceRecord) => record.employeeId === request.requesterId,
+      ),
+  )
   return (
     <>
       {ownApprovedLeave && (
@@ -2202,7 +2746,7 @@ function ManagerDailySummary({
           <p>{t("leave.managerApprovedDay")}</p>
         </div>
       )}
-      {records.length ? (
+      {records.length || leaveOnlyRequests.length ? (
         <>
           <div className="daily-metrics">
             <div>
@@ -2237,6 +2781,10 @@ function ManagerDailySummary({
                   ).length
                 }
               </b>
+            </div>
+            <div>
+              <small>{t("status.leave")}</small>
+              <b>{leaveOnlyRequests.length}</b>
             </div>
             <div>
               <small>{t("common.incomplete")}</small>
@@ -2277,6 +2825,20 @@ function ManagerDailySummary({
                         {record.status
                           ? status(record.status)
                           : t("attendance.statusUnavailable")}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {leaveOnlyRequests.map((request) => (
+                  <tr key={request.id}>
+                    <td>{employeeName(request.requesterId)}</td>
+                    <td>{request.requesterId}</td>
+                    <td>{employeeDepartment(request.requesterId)}</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>
+                      <span className="status-badge leave">
+                        {t("status.leave")}
                       </span>
                     </td>
                   </tr>
@@ -3170,8 +3732,56 @@ function Inventory({ user, items, setItems, open, notify }: any) {
   )
 }
 
-function Notifications() {
-  const { t } = useI18n()
+function Notifications({
+  user,
+  leaveRequests,
+}: {
+  user: User
+  leaveRequests: LeaveRequest[]
+}) {
+  const { locale, status, t } = useI18n()
+  const leaveNotices = leaveRequests.flatMap((request) => {
+    if (
+      request.requesterId === user.employeeId &&
+      request.status !== "Pending"
+    ) {
+      return [
+        {
+          key: `decision-${request.id}`,
+          text: t("leave.decisionNotification", {
+            status: status(request.status),
+          }),
+          date: request.reviewedAt || request.submittedAt,
+        },
+      ]
+    }
+    const canReviewEmployee =
+      user.role === "admin" &&
+      request.requesterRole === "employee" &&
+      request.status === "Pending"
+    const canReviewManager =
+      request.requesterRole === "admin" &&
+      canReviewManagerLeave(user.employeeId, request.requesterId) &&
+      request.status === "Pending"
+    if (canReviewEmployee || canReviewManager) {
+      return [
+        {
+          key: `review-${request.id}`,
+          text: t("leave.reviewRequiredNotification", {
+            id: request.requesterId,
+          }),
+          date: request.submittedAt,
+        },
+      ]
+    }
+    return []
+  })
+  const staticNotices = [
+    t("notifications.item1"),
+    t("notifications.item2"),
+    t("notifications.item3"),
+    t("notifications.item4"),
+  ]
   return (
     <>
       <PageHead
@@ -3180,12 +3790,25 @@ function Notifications() {
         description={t("notifications.description")}
       />
       <div className="panel notification-list">
-        {[
-          t("notifications.item1"),
-          t("notifications.item2"),
-          t("notifications.item3"),
-          t("notifications.item4"),
-        ].map((x, i) => (
+        {leaveNotices.map((notice, index) => (
+          <div className="notice" key={notice.key}>
+            <span className={`activity-icon a${index % 3}`}>
+              <CalendarDays />
+            </span>
+            <div>
+              <b>{notice.text}</b>
+              <p>
+                {new Intl.DateTimeFormat(locale, {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                }).format(new Date(notice.date))}
+              </p>
+            </div>
+            <span className="unread" />
+          </div>
+        ))}
+        {staticNotices.map((x, i) => (
           <div className="notice" key={x}>
             <span className={`activity-icon a${i % 3}`}>
               <Bell />

@@ -161,6 +161,155 @@ nav{display:flex;flex-direction:column;gap:5px}.nav-item{border:0;background:tra
   margin-top: 28px;
 }
 
+.leave-management {
+  margin-top: 30px;
+}
+
+.leave-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.leave-approval-section + .leave-approval-section {
+  margin-top: 22px;
+}
+
+.leave-approval-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.leave-approval-heading span {
+  display: grid;
+  place-items: center;
+  min-width: 27px;
+  height: 27px;
+  padding-inline: 7px;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.leave-approval-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.leave-approval-card {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.leave-approval-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.leave-approval-card-head b,
+.leave-approval-card-head small {
+  display: block;
+}
+
+.leave-approval-card-head small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.leave-approval-card dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.leave-approval-card dl div {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--soft);
+}
+
+.leave-approval-card dt,
+.leave-approval-reason small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.leave-approval-card dd {
+  margin: 5px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.leave-approval-reason {
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+
+.leave-approval-reason p,
+.leave-review-decision p {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.leave-review-decision {
+  padding: 11px 12px;
+  margin-top: 12px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary) 5%, var(--soft));
+}
+
+.leave-review-decision b {
+  color: var(--primary);
+  font-size: 10px;
+}
+
+.leave-review-decision small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.leave-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.leave-decision-modal {
+  width: min(500px, 100%);
+}
+
+.leave-decision-copy {
+  margin: -8px 0 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.leave-decision-modal .field > span small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .leave-history-list {
   padding-block: 8px;
 }
@@ -422,6 +571,10 @@ nav{display:flex;flex-direction:column;gap:5px}.nav-item{border:0;background:tra
 }
 
 @media (max-width: 900px) {
+  .leave-approval-grid {
+    grid-template-columns: 1fr;
+  }
+
   .leave-history-row {
     grid-template-columns: 1fr 1fr;
   }
@@ -443,6 +596,18 @@ nav{display:flex;flex-direction:column;gap:5px}.nav-item{border:0;background:tra
   .leave-history-row {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .leave-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .leave-approval-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .leave-approval-actions button {
+    flex: 1;
   }
 
   .leave-request-modal {
