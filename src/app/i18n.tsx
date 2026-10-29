@@ -363,6 +363,7 @@ const en = {
   "inventory.employeeNotes": "Employee notes",
   "inventory.notesPlaceholder": "Describe what you observed",
   "inventory.submitReview": "Submit for review",
+  "inventory.closeStockReport": "Close stock report form",
   "notifications.eyebrow": "INBOX",
   "notifications.title": "Notifications",
   "notifications.description":
@@ -817,6 +818,7 @@ const id: Record<keyof typeof en, string> = {
   "inventory.employeeNotes": "Catatan karyawan",
   "inventory.notesPlaceholder": "Jelaskan apa yang Anda amati",
   "inventory.submitReview": "Kirim untuk ditinjau",
+  "inventory.closeStockReport": "Tutup formulir laporan stok",
   "notifications.eyebrow": "KOTAK MASUK",
   "notifications.title": "Notifikasi",
   "notifications.description":

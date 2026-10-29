@@ -4436,15 +4436,20 @@ function StockReportModal({
     const item = items.find((x) => x.id === Number(f.get("item")))!
     save(item, Number(f.get("quantity")), String(f.get("notes")))
   }
-  return (
+  return createPortal(
     <div className="modal-wrap" role="dialog" aria-modal="true">
-      <div className="modal">
+      <div className="modal stock-report-modal">
         <div className="modal-head">
           <div>
             <span className="eyebrow">{t("inventory.physicalCheck")}</span>
             <h2>{t("inventory.submitReport")}</h2>
           </div>
-          <button className="icon-button" onClick={dismiss}>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={dismiss}
+            aria-label={t("inventory.closeStockReport")}
+          >
             <X />
           </button>
         </div>
@@ -4484,6 +4489,7 @@ function StockReportModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
