@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react"
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
+import { createPortal } from "react-dom"
 import {
   Archive,
   Bell,
@@ -413,6 +414,80 @@ function getStored<T>(key: string, fallback: T): T {
   }
 }
 
+function closeModalWithAnimation(close: () => void) {
+  const wrappers = document.querySelectorAll<HTMLElement>(".modal-wrap")
+  const wrapper = wrappers[wrappers.length - 1]
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches
+  if (!wrapper || reducedMotion) {
+    close()
+    return
+  }
+  if (wrapper.classList.contains("is-closing")) return
+  wrapper.classList.add("is-closing")
+  window.setTimeout(close, 180)
+}
+
+function useAnimatedModalClose(close: () => void, active = true) {
+  const dismiss = useCallback(() => {
+    closeModalWithAnimation(close)
+  }, [close])
+
+  useEffect(() => {
+    if (!active) return
+    const previousOverflow = document.body.style.overflow
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
+    document.body.style.overflow = "hidden"
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        dismiss()
+        return
+      }
+      if (event.key !== "Tab") return
+      const wrappers = document.querySelectorAll<HTMLElement>(".modal-wrap")
+      const wrapper = wrappers[wrappers.length - 1]
+      const focusable = wrapper
+        ? Array.from(
+            wrapper.querySelectorAll<HTMLElement>(
+              'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+            ),
+          )
+        : []
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener("keydown", onKeyDown)
+    const focusFrame = window.requestAnimationFrame(() => {
+      const wrappers = document.querySelectorAll<HTMLElement>(".modal-wrap")
+      wrappers[wrappers.length - 1]
+        ?.querySelector<HTMLElement>(
+          "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)",
+        )
+        ?.focus()
+    })
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener("keydown", onKeyDown)
+      document.body.style.overflow = previousOverflow
+      previousFocus?.focus()
+    }
+  }, [active, dismiss])
+
+  return dismiss
+}
+
 export function InWorkApp() {
   const { language, locale, setLanguage, t } = useI18n()
   const [user, setUser] = useState<User | null>(() =>
@@ -626,83 +701,87 @@ export function InWorkApp() {
           </div>
         </header>
         <section className="content">
-          {view === "dashboard" && (
-            <Dashboard
-              user={user}
-              employees={employees}
-              tasks={tasks}
-              items={items}
-              checkedIn={checkedIn}
-              setCheckedIn={() =>
-                setCameraAction(checkedIn ? "checkOut" : "checkIn")
-              }
-              navigate={navigate}
-            />
-          )}
-          {view === "employees" && (
-            <Employees
-              employees={employees}
-              search={search}
-              setSearch={setSearch}
-              open={() => setModal("employee")}
-              remove={(id: string) => {
-                if (confirm(t("employees.deleteConfirm"))) {
-                  setEmployees(employees.filter((e: Employee) => e.id !== id))
-                  notify(t("employees.removed"))
+          <div className="page-transition" key={view}>
+            {view === "dashboard" && (
+              <Dashboard
+                user={user}
+                employees={employees}
+                tasks={tasks}
+                items={items}
+                checkedIn={checkedIn}
+                setCheckedIn={() =>
+                  setCameraAction(checkedIn ? "checkOut" : "checkIn")
                 }
-              }}
-            />
-          )}
-          {view === "attendance" && (
-            <Attendance
-              user={user}
-              employees={employees}
-              checkedIn={checkedIn}
-              attendance={attendance}
-              action={() => setCameraAction(checkedIn ? "checkOut" : "checkIn")}
-              lang={language}
-            />
-          )}
-          {view === "tasks" && (
-            <Tasks
-              user={user}
-              employees={employees}
-              tasks={tasks}
-              setTasks={setTasks}
-              reviews={reviews}
-              setReviews={setReviews}
-              attendance={attendance}
-              open={() => setModal("task")}
-              notify={notify}
-            />
-          )}
-          {view === "inventory" && (
-            <Inventory
-              user={user}
-              items={items}
-              setItems={setItems}
-              open={() => setModal("item")}
-              notify={notify}
-            />
-          )}
-          {view === "notifications" && <Notifications />}
-          {view === "profile" && (
-            <Profile
-              user={user}
-              setUser={setUser}
-              employees={employees}
-              setEmployees={setEmployees}
-              notify={notify}
-            />
-          )}
-          {view === "settings" && (
-            <SettingsPage
-              dark={dark}
-              setDark={setDark}
-              lang={language}
-              setLang={setLanguage}
-            />
-          )}
+                navigate={navigate}
+              />
+            )}
+            {view === "employees" && (
+              <Employees
+                employees={employees}
+                search={search}
+                setSearch={setSearch}
+                open={() => setModal("employee")}
+                remove={(id: string) => {
+                  if (confirm(t("employees.deleteConfirm"))) {
+                    setEmployees(employees.filter((e: Employee) => e.id !== id))
+                    notify(t("employees.removed"))
+                  }
+                }}
+              />
+            )}
+            {view === "attendance" && (
+              <Attendance
+                user={user}
+                employees={employees}
+                checkedIn={checkedIn}
+                attendance={attendance}
+                action={() =>
+                  setCameraAction(checkedIn ? "checkOut" : "checkIn")
+                }
+                lang={language}
+              />
+            )}
+            {view === "tasks" && (
+              <Tasks
+                user={user}
+                employees={employees}
+                tasks={tasks}
+                setTasks={setTasks}
+                reviews={reviews}
+                setReviews={setReviews}
+                attendance={attendance}
+                open={() => setModal("task")}
+                notify={notify}
+              />
+            )}
+            {view === "inventory" && (
+              <Inventory
+                user={user}
+                items={items}
+                setItems={setItems}
+                open={() => setModal("item")}
+                notify={notify}
+              />
+            )}
+            {view === "notifications" && <Notifications />}
+            {view === "profile" && (
+              <Profile
+                user={user}
+                setUser={setUser}
+                employees={employees}
+                setEmployees={setEmployees}
+                notify={notify}
+              />
+            )}
+            {view === "settings" && (
+              <SettingsPage
+                dark={dark}
+                setDark={setDark}
+                lang={language}
+                setLang={setLanguage}
+              />
+            )}
+          </div>
         </section>
       </main>
       {modal && (
@@ -715,8 +794,10 @@ export function InWorkApp() {
               setEmployees([...employees, data as Employee])
             if (modal === "task") setTasks([...tasks, data as Task])
             if (modal === "item") setItems([...items, data as Item])
-            setModal(null)
-            notify(t("modal.added", { type: modal }))
+            closeModalWithAnimation(() => {
+              setModal(null)
+              notify(t("modal.added", { type: modal }))
+            })
           }}
         />
       )}
@@ -768,7 +849,7 @@ export function InWorkApp() {
               localStorage.setItem("inwork-checked-in", "false")
               notify(t("attendance.outSuccess"))
             }
-            setCameraAction(null)
+            closeModalWithAnimation(() => setCameraAction(null))
           }}
         />
       )}
@@ -1114,9 +1195,12 @@ function Dashboard({
       <div className="stats-grid">
         {cards.map((card: any) => (
           <button
-            className="stat-card"
+            type="button"
+            className={card.to ? "stat-card is-interactive" : "stat-card"}
             key={card.label}
             onClick={() => card.to && navigate(card.to)}
+            aria-disabled={!card.to}
+            tabIndex={card.to ? 0 : -1}
           >
             <span className={`stat-icon ${card.color}`}>
               <card.icon />
@@ -1458,7 +1542,7 @@ function Attendance({
               ‹
             </button>
             <div>
-              <h2>{monthLabel}</h2>
+              <h2 key={monthLabel}>{monthLabel}</h2>
               <p>{t("attendance.historyRange")}</p>
             </div>
             <button
@@ -1919,6 +2003,7 @@ function PerformanceReviewModal({
   notify,
 }: any) {
   const { locale, t } = useI18n()
+  const dismiss = useAnimatedModalClose(close)
   const ownPublished = reviews
     .filter(
       (review: PerformanceReview) =>
@@ -1947,15 +2032,15 @@ function PerformanceReviewModal({
     const review = ownPublished.find(
       (item: PerformanceReview) => item.id === selectedReview,
     )
-    return (
-      <div className="modal-wrap">
+    return createPortal(
+      <div className="modal-wrap" role="dialog" aria-modal="true">
         <div className="modal review-modal">
           <div className="modal-head">
             <div>
               <span className="eyebrow">{t("review.monthlyNotes")}</span>
               <h2>{t("review.managerFeedback")}</h2>
             </div>
-            <button className="icon-button" onClick={close}>
+            <button className="icon-button" onClick={dismiss}>
               <X />
             </button>
           </div>
@@ -2022,7 +2107,8 @@ function PerformanceReviewModal({
             </div>
           )}
         </div>
-      </div>
+      </div>,
+      document.body,
     )
   }
   const save = (e: FormEvent<HTMLFormElement>) => {
@@ -2056,17 +2142,22 @@ function PerformanceReviewModal({
         ? t("review.publishedSuccess")
         : t("review.draftSuccess"),
     )
-    close()
+    dismiss()
   }
-  return (
-    <div className="modal-wrap">
-      <div className="modal review-modal">
+  return createPortal(
+    <div className="modal-wrap" role="dialog" aria-modal="true">
+      <div className="modal review-modal review-editor-modal">
         <div className="modal-head">
           <div>
             <span className="eyebrow">{t("review.monthly")}</span>
             <h2>{existing ? t("review.edit") : t("review.create")}</h2>
           </div>
-          <button className="icon-button" onClick={close}>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={dismiss}
+            aria-label={t("review.closeForm")}
+          >
             <X />
           </button>
         </div>
@@ -2189,14 +2280,19 @@ function PerformanceReviewModal({
             </select>
           </label>
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={close}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={dismiss}
+            >
               {t("common.cancel")}
             </button>
             <button className="primary-button">{t("review.save")}</button>
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -2235,6 +2331,10 @@ function Inventory({ user, items, setItems, open, notify }: any) {
   const [reporting, setReporting] = useState(false)
   const [stockSearch, setStockSearch] = useState("")
   const [deleteItem, setDeleteItem] = useState<Item | null>(null)
+  const dismissDelete = useAnimatedModalClose(
+    () => setDeleteItem(null),
+    Boolean(deleteItem),
+  )
   const adjust = (item: Item, amount: number) => {
     if (item.stock + amount < 0) return
     setItems(
@@ -2507,13 +2607,15 @@ function Inventory({ user, items, setItems, open, notify }: any) {
                 submitted: new Date().toISOString(),
               },
             ])
-            setReporting(false)
-            notify(t("inventory.submitted"))
+            closeModalWithAnimation(() => {
+              setReporting(false)
+              notify(t("inventory.submitted"))
+            })
           }}
         />
       )}
       {deleteItem && (
-        <div className="modal-wrap">
+        <div className="modal-wrap" role="alertdialog" aria-modal="true">
           <div className="modal confirm-modal">
             <span className="danger-icon">
               <X />
@@ -2526,10 +2628,7 @@ function Inventory({ user, items, setItems, open, notify }: any) {
               })}
             </p>
             <div className="modal-actions">
-              <button
-                className="secondary-button"
-                onClick={() => setDeleteItem(null)}
-              >
+              <button className="secondary-button" onClick={dismissDelete}>
                 {t("common.cancel")}
               </button>
               <button
@@ -2546,8 +2645,10 @@ function Inventory({ user, items, setItems, open, notify }: any) {
                   setItems(
                     items.filter((item: Item) => item.id !== deleteItem.id),
                   )
-                  setDeleteItem(null)
-                  notify(t("inventory.archived"))
+                  closeModalWithAnimation(() => {
+                    setDeleteItem(null)
+                    notify(t("inventory.archived"))
+                  })
                 }}
               >
                 {t("inventory.confirmDelete")}
@@ -2791,6 +2892,7 @@ function SettingsPage({ dark, setDark, lang, setLang }: any) {
 
 function AddModal({ type, employees, close, save }: any) {
   const { t } = useI18n()
+  const dismiss = useAnimatedModalClose(close)
   const title =
     type === "employee"
       ? t("modal.addEmployee")
@@ -2850,7 +2952,7 @@ function AddModal({ type, employees, close, save }: any) {
             <span className="eyebrow">{t("modal.newRecord")}</span>
             <h2>{title}</h2>
           </div>
-          <button className="icon-button" onClick={close}>
+          <button className="icon-button" onClick={dismiss}>
             <X />
           </button>
         </div>
@@ -2967,7 +3069,11 @@ function AddModal({ type, employees, close, save }: any) {
             </>
           )}
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={close}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={dismiss}
+            >
               {t("common.cancel")}
             </button>
             <button className="primary-button" type="submit">
@@ -2994,6 +3100,7 @@ function CameraAttendance({
   confirm: (photo: string) => void
 }) {
   const { t } = useI18n()
+  const dismiss = useAnimatedModalClose(close)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [photo, setPhoto] = useState("")
   const [error, setError] = useState("")
@@ -3025,7 +3132,7 @@ function CameraAttendance({
   }
   const exit = () => {
     stream?.getTracks().forEach((track) => track.stop())
-    close()
+    dismiss()
   }
   return (
     <div className="modal-wrap" role="dialog" aria-modal="true">
@@ -3100,15 +3207,16 @@ function EmployeeDetail({
   close: () => void
 }) {
   const { locale, status, t } = useI18n()
+  const dismiss = useAnimatedModalClose(close)
   return (
-    <div className="modal-wrap">
+    <div className="modal-wrap" role="dialog" aria-modal="true">
       <div className="modal employee-detail">
         <div className="modal-head">
           <div>
             <span className="eyebrow">{t("employees.profile")}</span>
             <h2>{employee.name}</h2>
           </div>
-          <button className="icon-button" onClick={close}>
+          <button className="icon-button" onClick={dismiss}>
             <X />
           </button>
         </div>
@@ -3170,7 +3278,7 @@ function EmployeeDetail({
           </div>
         </div>
         <div className="modal-actions">
-          <button className="primary-button" onClick={close}>
+          <button className="primary-button" onClick={dismiss}>
             {t("employees.back")}
           </button>
         </div>
@@ -3189,6 +3297,7 @@ function StockReportModal({
   save: (item: Item, quantity: number, notes: string) => void
 }) {
   const { t } = useI18n()
+  const dismiss = useAnimatedModalClose(close)
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
@@ -3196,14 +3305,14 @@ function StockReportModal({
     save(item, Number(f.get("quantity")), String(f.get("notes")))
   }
   return (
-    <div className="modal-wrap">
+    <div className="modal-wrap" role="dialog" aria-modal="true">
       <div className="modal">
         <div className="modal-head">
           <div>
             <span className="eyebrow">{t("inventory.physicalCheck")}</span>
             <h2>{t("inventory.submitReport")}</h2>
           </div>
-          <button className="icon-button" onClick={close}>
+          <button className="icon-button" onClick={dismiss}>
             <X />
           </button>
         </div>
@@ -3230,7 +3339,11 @@ function StockReportModal({
             placeholder={t("inventory.notesPlaceholder")}
           />
           <div className="modal-actions">
-            <button type="button" className="secondary-button" onClick={close}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={dismiss}
+            >
               {t("common.cancel")}
             </button>
             <button className="primary-button">

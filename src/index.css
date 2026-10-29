@@ -33,3 +33,505 @@ nav{display:flex;flex-direction:column;gap:5px}.nav-item{border:0;background:tra
 @media(max-width:620px){.profile-button span:last-child{display:none}.topbar{height:64px}.content{padding:23px 14px 40px}.page-head{align-items:flex-start;flex-direction:column;margin-bottom:22px}.page-head .fit{width:100%}.demo-badge{display:none}.stats-grid,.people-grid,.inventory-grid{grid-template-columns:1fr}.stat-card{padding:16px}.toolbar{display:grid;grid-template-columns:1fr 1fr}.search{grid-column:1/-1;max-width:none}.calendar{padding:12px}.calendar-key{display:none}.week,.days{gap:3px}.day{border-radius:7px}.day small{display:none}.form-grid{grid-template-columns:1fr}.settings-grid{grid-template-columns:1fr}.setting-card{grid-template-columns:auto 1fr}.setting-card>*:last-child{grid-column:2}.auth-panel{padding:26px 20px}.auth-box h2{font-size:29px}.auth-mobile-brand{margin-bottom:45px}.toast{left:14px;right:14px;bottom:14px}.chart-panel{padding:16px}}
 @media(max-width:620px){.stock-section-title{align-items:stretch;flex-direction:column}.stock-search{width:100%}}
 @media(max-width:620px){.head-actions{width:100%}.head-actions button{flex:1}.daily-metrics{grid-template-columns:1fr 1fr}.review-sections{grid-template-columns:1fr}.review-date{grid-column:auto}.calendar-navigation{grid-template-columns:36px 1fr 36px}.calendar-navigation .icon-button{width:36px;height:36px}}
+
+/* Performance review editor: fixed header with an independently scrolling form. */
+.review-editor-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 760px;
+  max-width: calc(100vw - 32px);
+  max-height: 90vh;
+  max-height: 90dvh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.review-editor-modal > .modal-head {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 88px;
+  margin: 0;
+  padding: 22px 24px 18px;
+  background: var(--surface);
+}
+
+.review-editor-modal > .modal-head > div {
+  min-width: 0;
+  padding-right: 8px;
+}
+
+.review-editor-modal > .modal-head .icon-button {
+  position: static;
+  flex: 0 0 40px;
+  margin: 0;
+}
+
+.review-editor-modal > form {
+  min-height: 0;
+  gap: 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 4px 24px 24px;
+}
+
+@media (max-width: 620px) {
+  .modal-wrap {
+    padding: 12px;
+  }
+
+  .review-editor-modal {
+    width: 100%;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 16px;
+  }
+
+  .review-editor-modal > .modal-head {
+    min-height: 80px;
+    gap: 12px;
+    padding: 18px 18px 14px;
+  }
+
+  .review-editor-modal > .modal-head h2 {
+    font-size: 20px;
+  }
+
+  .review-editor-modal > form {
+    padding: 4px 18px 20px;
+  }
+}
+
+/* Interaction and motion system */
+:root {
+  --motion-fast: 150ms;
+  --motion-standard: 220ms;
+  --motion-modal: 260ms;
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+  --hover-shadow: 0 16px 36px rgba(22, 31, 72, .12);
+}
+
+body,
+.sidebar,
+.topbar,
+.panel,
+.stat-card,
+.person-card,
+.task-card,
+.inventory-card,
+.setting-card {
+  transition:
+    background-color var(--motion-standard) var(--ease-in-out),
+    border-color var(--motion-standard) var(--ease-in-out),
+    color var(--motion-standard) var(--ease-in-out),
+    box-shadow var(--motion-standard) var(--ease-out);
+}
+
+button,
+a,
+input,
+select,
+textarea,
+.search,
+.password-field,
+.status-badge,
+.stock,
+.switch,
+.switch i {
+  transition:
+    color var(--motion-fast) var(--ease-in-out),
+    background-color var(--motion-fast) var(--ease-in-out),
+    border-color var(--motion-fast) var(--ease-in-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-in-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  box-shadow: var(--focus-ring);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px) scale(.985);
+}
+
+button:disabled,
+button[aria-disabled='true'] {
+  cursor: default;
+}
+
+button:disabled {
+  opacity: .45;
+  box-shadow: none;
+}
+
+button[aria-busy='true'] {
+  pointer-events: none;
+  cursor: wait;
+}
+
+button[aria-busy='true']::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: control-spin 650ms linear infinite;
+}
+
+@keyframes control-spin {
+  to { transform: rotate(360deg); }
+}
+
+.primary-button,
+.secondary-button,
+.delete-confirm,
+.delete-item-button,
+.text-button,
+.icon-button,
+.menu-button,
+.profile-button,
+.toggle-row,
+.role-select button,
+.report-actions button,
+.stock-actions button {
+  will-change: transform;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary-dark) 92%, white);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 24%, transparent);
+  transform: translateY(-1px);
+}
+
+.attendance-card .primary-button:hover:not(:disabled) {
+  background: #f4f5ff;
+  color: var(--primary);
+}
+
+.secondary-button:hover:not(:disabled),
+.icon-button:hover:not(:disabled),
+.menu-button:hover:not(:disabled),
+.report-actions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  background: color-mix(in srgb, var(--primary) 6%, var(--surface));
+  color: var(--primary);
+}
+
+.text-button:hover,
+.switch-auth button:hover {
+  color: var(--primary-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.delete-item-button:hover,
+.delete-confirm:hover:not(:disabled),
+.icon-button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: color-mix(in srgb, var(--danger) 82%, black);
+}
+
+.delete-confirm:hover:not(:disabled) {
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--danger) 24%, transparent);
+  transform: translateY(-1px);
+}
+
+.nav-item {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transition:
+    color var(--motion-fast) var(--ease-in-out),
+    background-color var(--motion-fast) var(--ease-in-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  inset: 9px auto 9px 0;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--primary);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform var(--motion-standard) var(--ease-out);
+}
+
+.nav-item svg {
+  transition:
+    color var(--motion-fast) var(--ease-in-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.nav-item:hover:not(.danger) {
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  color: var(--primary);
+}
+
+.nav-item:hover svg {
+  transform: translateX(2px);
+}
+
+.nav-item.active {
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  color: var(--primary);
+}
+
+.nav-item.active::before {
+  transform: scaleY(1);
+}
+
+.profile-button:hover,
+.toggle-row:hover {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.page-transition {
+  animation: page-enter var(--motion-standard) var(--ease-out) both;
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.stat-card {
+  cursor: default;
+}
+
+.stat-card.is-interactive {
+  cursor: pointer;
+}
+
+.stat-card.is-interactive:hover,
+.person-card:has(button):hover,
+.task-card:has(button):hover,
+.inventory-card:has(button):hover {
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
+  box-shadow: var(--hover-shadow);
+  transform: translateY(-3px);
+}
+
+.stat-card,
+.person-card,
+.task-card,
+.inventory-card {
+  transition:
+    transform var(--motion-standard) var(--ease-out),
+    box-shadow var(--motion-standard) var(--ease-out),
+    border-color var(--motion-standard) var(--ease-in-out),
+    background-color var(--motion-standard) var(--ease-in-out);
+}
+
+.stat-card.is-interactive:hover > svg {
+  color: var(--primary);
+  transform: translateX(2px);
+}
+
+.stat-card > svg,
+.item-visual svg,
+.setting-icon svg {
+  transition:
+    color var(--motion-standard) var(--ease-in-out),
+    transform var(--motion-standard) var(--ease-out);
+}
+
+.inventory-card:has(button):hover .item-visual svg,
+.setting-card:has(button):hover .setting-icon svg {
+  transform: translateY(-2px);
+}
+
+.attendance-table tbody tr,
+.report-row,
+.notice,
+.activity,
+.mini-task {
+  transition: background-color var(--motion-fast) var(--ease-in-out);
+}
+
+.attendance-table tbody tr:hover,
+.report-row:hover,
+.notice:hover {
+  background: color-mix(in srgb, var(--primary) 4%, transparent);
+}
+
+.search:hover,
+.field input:hover:not(:disabled),
+.field select:hover:not(:disabled),
+.field textarea:hover:not(:disabled),
+.password-field:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+}
+
+.search:focus-within,
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.password-field:focus-within {
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+}
+
+.search:focus-within svg {
+  color: var(--primary);
+}
+
+.field input:disabled {
+  cursor: not-allowed;
+  opacity: .68;
+}
+
+.form-error,
+.attendance-warning,
+.camera-error {
+  animation: feedback-enter var(--motion-standard) var(--ease-out) both;
+}
+
+@keyframes feedback-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.day {
+  transition:
+    color var(--motion-fast) var(--ease-in-out),
+    background-color var(--motion-fast) var(--ease-in-out),
+    border-color var(--motion-fast) var(--ease-in-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.day:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+  transform: translateY(-1px);
+}
+
+.day.selected {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.day.today:not(.selected) {
+  background: color-mix(in srgb, var(--primary) 4%, var(--soft));
+}
+
+.calendar-navigation h2 {
+  animation: calendar-label-enter var(--motion-standard) var(--ease-out);
+}
+
+@keyframes calendar-label-enter {
+  from { opacity: .4; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.progress i {
+  transition: width 420ms var(--ease-out);
+}
+
+.modal-wrap {
+  animation: backdrop-enter var(--motion-modal) var(--ease-out) both;
+}
+
+.modal-wrap .modal {
+  animation: modal-enter var(--motion-modal) var(--ease-out) both;
+  transform-origin: center bottom;
+}
+
+.modal-wrap.is-closing {
+  animation: backdrop-exit 180ms var(--ease-in-out) both;
+  pointer-events: none;
+}
+
+.modal-wrap.is-closing .modal {
+  animation: modal-exit 180ms var(--ease-in-out) both;
+}
+
+@keyframes backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes backdrop-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes modal-enter {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes modal-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(6px) scale(.99); }
+}
+
+.toast {
+  animation: toast-lifecycle 2.8s var(--ease-out) both;
+}
+
+@keyframes toast-lifecycle {
+  0% { opacity: 0; transform: translateY(10px) scale(.98); }
+  8%, 88% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(6px) scale(.99); }
+}
+
+.backdrop {
+  animation: backdrop-enter var(--motion-standard) var(--ease-out) both;
+}
+
+@media (hover: none) {
+  .stat-card.is-interactive:hover,
+  .person-card:has(button):hover,
+  .task-card:has(button):hover,
+  .inventory-card:has(button):hover,
+  .day:hover:not(:disabled) {
+    transform: none;
+    box-shadow: var(--shadow);
+  }
+
+  .nav-item:hover svg {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  button:active:not(:disabled),
+  .stat-card.is-interactive:hover,
+  .person-card:has(button):hover,
+  .task-card:has(button):hover,
+  .inventory-card:has(button):hover,
+  .day:hover:not(:disabled) {
+    transform: none;
+  }
+}
